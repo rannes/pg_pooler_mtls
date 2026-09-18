@@ -1,0 +1,7 @@
+.git
+.runtime
+.venv
+**/__pycache__
+test-results
+.env
+.DS_Store

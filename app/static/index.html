@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Passwordless pooler lab</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#workbench">Skip to the workbench</a>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Passwordless pooler lab home">
+        <svg width="27" height="30" viewBox="0 0 27 30" fill="none" aria-hidden="true"><path d="M13.5 2 25 7v8c0 6-5.5 10-11.5 13C7.5 25 2 21 2 15V7L13.5 2Z" stroke="currentColor" stroke-width="2"/><path d="m8 15 4 4 7-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Pooler lab<span class="brand-detail">Passwordless PostgreSQL</span></span>
+      </a>
+      <nav class="app-switch" aria-label="Applications"><span id="active-app">App 1</span><a id="other-app" href="http://127.0.0.1:8082">Open App 2 <span aria-hidden="true">↗</span></a></nav>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div><h1 id="page-title">An identity.<br>No password.</h1><p>Follow a real query from your app to PostgreSQL.<br>Then try the boundaries that keep the two apps apart.</p></div>
+        <div class="workload-stamp"><span class="app-glyph" id="app-glyph">1</span><div><span class="subtle">Active workload</span><strong id="workload-name">app1</strong><span id="workload-schema">Own schema: app1</span></div></div>
+      </section>
+
+      <section class="connection-panel" aria-labelledby="path-title">
+        <div class="section-top"><h2 id="path-title">The connection path</h2><span class="path-status" id="path-status">Waiting for a query</span></div>
+        <div class="connection-path">
+          <div class="path-node app-node"><span class="node-symbol" aria-hidden="true">{ }</span><strong id="path-app">app1</strong><span>Application</span><small>No keys or passwords</small></div>
+          <div class="path-link local"><span>Loopback</span><div class="path-line"></div><small id="loopback-port">127.0.0.1:15432</small></div>
+          <div class="path-node"><svg class="node-symbol" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="m16 3 11 5v8c0 6-6 10-11 13C11 26 5 22 5 16V8l11-5Z" stroke="currentColor" stroke-width="1.8"/><path d="m11 15 4 4 7-8" stroke="currentColor" stroke-width="1.8"/></svg><strong>Envoy</strong><span>Workload identity</span><small id="workload-cn">app1.internal</small></div>
+          <div class="path-link"><span class="tls-label">mTLS</span><div class="path-line"></div><small>Workload certificate</small></div>
+          <div class="path-node pooler-node"><svg class="node-symbol" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M4 8h9l6 8h9M4 24h9l6-8M4 16h9" stroke="currentColor" stroke-width="1.8"/><circle cx="4" cy="8" r="2" fill="currentColor"/><circle cx="4" cy="16" r="2" fill="currentColor"/><circle cx="4" cy="24" r="2" fill="currentColor"/><circle cx="28" cy="16" r="2" fill="currentColor"/></svg><strong id="path-pooler">PgBouncer</strong><span>Trusted delegate</span><small>Certificate → allowed role</small></div>
+          <div class="path-link"><span class="tls-label">mTLS</span><div class="path-line"></div><small>Gateway certificate</small></div>
+          <div class="path-node"><svg class="node-symbol" viewBox="0 0 32 32" fill="none" aria-hidden="true"><ellipse cx="16" cy="7" rx="11" ry="4" stroke="currentColor" stroke-width="1.8"/><path d="M5 7v18c0 5 22 5 22 0V7M5 16c0 5 22 5 22 0" stroke="currentColor" stroke-width="1.8"/></svg><strong>PostgreSQL</strong><span>Role permissions</span><small>productdb</small></div>
+        </div>
+        <div class="path-note"><span class="note-mark" aria-hidden="true">i</span><p>Two separate TLS connections. PostgreSQL sees the pooler’s gateway certificate and the app’s database role.</p></div>
+      </section>
+
+      <div class="workspace" id="workbench">
+        <section class="workbench" aria-labelledby="workbench-title">
+          <div class="section-top"><h2 id="workbench-title">Try the boundaries</h2><span class="muted">9 real checks</span></div>
+          <fieldset class="pooler-choice"><legend>Choose a pooler</legend><div class="pooler-options"><label><input type="radio" name="pooler" value="pgbouncer" checked><span>PgBouncer</span></label><label><input type="radio" name="pooler" value="pgdog"><span>PgDog</span></label></div></fieldset>
+          <div class="action-group"><div class="group-heading"><h3>Your workspace</h3><span class="expect-label positive">Expected: allowed</span></div><div id="allowed-actions" class="action-list"></div></div>
+          <div class="action-group"><div class="group-heading"><h3>Beyond your permissions</h3><span class="expect-label negative">Expected: blocked</span></div><div id="blocked-actions" class="action-list"></div></div>
+          <button class="run-all" id="run-all" type="button"><span class="play-icon" aria-hidden="true">▶</span> Run all 9 checks</button>
+          <p class="run-status" id="run-status" role="status" aria-live="polite">Choose a check to see its evidence.</p>
+        </section>
+
+        <section class="evidence-panel" aria-labelledby="evidence-title" aria-busy="false">
+          <div class="section-top"><h2 id="evidence-title">Query evidence</h2><span class="live-label"><span></span>From the actual attempt</span></div>
+          <div id="evidence-empty" class="evidence-empty"><div class="empty-signal" aria-hidden="true"><span></span><span></span><span></span></div><h3>Let the database tell you.</h3><p>Run “Check identity” to inspect the role, backend and TLS certificate behind a real query.</p><p class="empty-caption">Every result below comes from a live attempt.</p></div>
+          <div id="evidence-content" hidden>
+            <div class="result-heading"><div><span class="subtle" id="result-action">Check identity</span><h3 id="result-title">Allowed</h3></div><span id="result-verdict" class="verdict"></span></div>
+            <p class="result-context" id="result-context"></p>
+            <div class="identity-grid"><div><span>Current role</span><strong id="current-role">—</strong></div><div><span>Session role</span><strong id="session-role">—</strong></div></div>
+            <dl class="connection-details" id="connection-details"></dl>
+            <div id="denial-block" class="message-block" hidden><h4 id="denial-title">Denial evidence</h4><pre id="denial-text"></pre></div>
+            <div id="control-block" class="control-note" hidden></div>
+            <div id="probes-block" class="probes-block" hidden></div>
+            <div id="rows-block" class="rows-block" hidden><h4>Returned rows</h4><div id="rows-content"></div></div>
+            <div id="sql-block" class="sql-block" hidden><h4>Statement executed</h4><pre id="sql-text"></pre></div>
+            <details class="raw-details"><summary>Raw response and request ID</summary><pre id="raw-evidence"></pre></details>
+          </div>
+        </section>
+      </div>
+
+      <section class="attempts-panel" aria-labelledby="attempts-title">
+        <div class="section-top"><div><h2 id="attempts-title">Attempt feed</h2><p>Actual app requests and database results. Most recent first.</p></div><span class="muted" id="feed-count">0 / 100</span></div>
+        <p id="feed-empty" class="feed-empty">Your checks will appear here. Select an attempt to inspect its evidence.</p>
+        <div class="feed-scroll"><table class="attempts-table" id="attempts-table" hidden><thead><tr><th scope="col">Time</th><th scope="col">Check</th><th scope="col">Pooler</th><th scope="col">Result</th><th scope="col">Duration</th></tr></thead><tbody id="attempts-body"></tbody></table></div>
+      </section>
+    </main>
+    <footer><strong>A local security demonstrator.</strong><span>Poolers are trusted delegates. Host administrators control the trust boundary.</span><span>Service logs: <code>docker compose logs</code></span></footer>
+  </div>
+</body>
+</html>

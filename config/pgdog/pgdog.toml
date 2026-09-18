@@ -1,0 +1,29 @@
+[general]
+host = "0.0.0.0"
+port = 6432
+workers = 2
+default_pool_size = 4
+min_pool_size = 0
+pooler_mode = "transaction"
+auth_type = "scram"
+passthrough_auth = "disabled"
+tls_certificate = "/run/tls/server.crt"
+tls_private_key = "/run/tls/server.key"
+tls_client_ca_certificate = "/run/tls/workload-ca.crt"
+tls_client_required = true
+tls_verify = "verify_full"
+tls_server_ca_certificate = "/run/tls/database-ca.crt"
+tls_server_certificate = "/run/tls/gateway.crt"
+tls_server_private_key = "/run/tls/gateway.key"
+connect_timeout = 4000
+query_timeout = 5000
+checkout_timeout = 5000
+log_connections = true
+log_disconnections = true
+log_format = "json"
+
+[[databases]]
+name = "productdb"
+host = "postgres"
+port = 5432
+role = "primary"

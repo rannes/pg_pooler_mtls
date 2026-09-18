@@ -1,0 +1,16 @@
+[[users]]
+name = "app1"
+database = "productdb"
+identity = "app1.internal"
+tls_client_certificate_required = true
+# v0.1.59 skips backend connections when the credential candidate list is empty.
+# This non-secret empty sentinel enables the attempt; PostgreSQL uses cert auth
+# and all login roles have NULL passwords. Never replace this with a real secret.
+server_password = ""
+
+[[users]]
+name = "app2"
+database = "productdb"
+identity = "app2.internal"
+tls_client_certificate_required = true
+server_password = ""

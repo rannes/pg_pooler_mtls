@@ -1,0 +1,184 @@
+name: pg-pooler-mtls
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 128
+  tmpfs: ['/tmp:size=32m,mode=1777']
+  logging:
+    driver: json-file
+    options: {max-size: 5m, max-file: '2'}
+
+x-envoy: &envoy
+  <<: *hardened
+  image: envoyproxy/envoy:contrib-v1.39.1@sha256:a3c456781689530e39e0fef5347c2fea7f16b68fcef4a180647fc5bd1d2542e1
+  user: '10001:10001'
+  command: [envoy, -c, /etc/envoy/envoy.yaml, --concurrency, '2', --log-level, warning]
+  depends_on:
+    pki: {condition: service_completed_successfully}
+    pgbouncer: {condition: service_started}
+    pgdog: {condition: service_started}
+
+x-app: &app
+  <<: *hardened
+  build: {context: ., dockerfile: app/Dockerfile}
+  image: pg-pooler-mtls-app:local
+  user: '10001:10001'
+  healthcheck:
+    test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2)"]
+    interval: 5s
+    timeout: 3s
+    retries: 12
+    start_period: 10s
+
+services:
+  ui:
+    <<: *hardened
+    image: nginx:stable-alpine@sha256:ef8676b33d681f272ba429b27658bdd7e640963279714c96bddf1dc76307f7b6
+    user: '10001:10001'
+    entrypoint: [nginx, -c, /etc/nginx/nginx.conf, -g, 'daemon off;']
+    volumes: [./config/nginx.conf:/etc/nginx/nginx.conf:ro]
+    networks: [web, app1, app2]
+    ports:
+      - '127.0.0.1:${APP1_PORT:-8081}:8081'
+      - '127.0.0.1:${APP2_PORT:-8082}:8082'
+    depends_on:
+      app1: {condition: service_healthy}
+      app2: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:8081/healthz']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  pki:
+    build: {context: ., dockerfile: docker/pki/Dockerfile}
+    network_mode: none
+    volumes:
+      - ca-private:/pki
+      - app1-tls:/out/app1
+      - app2-tls:/out/app2
+      - pgbouncer-tls:/out/pgbouncer
+      - pgdog-tls:/out/pgdog
+      - postgres-tls:/out/postgres
+      - test-tls:/out/tests
+    restart: 'no'
+
+  postgres:
+    image: postgres:17.11-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
+    environment:
+      POSTGRES_DB: productdb
+      POSTGRES_PASSWORD_FILE: /run/tls/bootstrap-password
+      POSTGRES_INITDB_ARGS: --auth-host=reject --auth-local=peer
+      POSTGRES_HOST_AUTH_METHOD: reject
+    command: [postgres, -c, config_file=/etc/postgresql/postgresql.conf]
+    depends_on:
+      pki: {condition: service_completed_successfully}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - postgres-tls:/run/tls:ro
+      - ./config/postgres:/etc/postgresql:ro
+      - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/10-demo.sql:ro
+    networks:
+      backend:
+        ipv4_address: ${DIRECT_DB_IP:-172.30.83.10}
+    healthcheck:
+      test: [CMD-SHELL, "gosu postgres pg_isready -U postgres -d productdb && gosu postgres psql -U postgres -d productdb -tAc \"SELECT count(*)=2 FROM pg_roles WHERE rolname IN ('app1','app2')\" | grep -q t"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt: [no-new-privileges:true]
+    shm_size: 128mb
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: '2'}
+
+  pgbouncer:
+    <<: *hardened
+    build: {context: ., dockerfile: docker/pgbouncer/Dockerfile}
+    volumes:
+      - pgbouncer-tls:/run/tls:ro
+      - ./config/pgbouncer:/etc/pgbouncer:ro
+    networks: [app1, app2, backend]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  pgdog:
+    <<: *hardened
+    image: ghcr.io/pgdogdev/pgdog:0.1.59@sha256:38bebd7ca0793b1891e0efc97d9c0f3659f66cbc65608e390ec5ee5a7c1f00ce
+    user: '10001:10001'
+    command: [pgdog, --config, /etc/pgdog/pgdog.toml, --users, /etc/pgdog/users.toml]
+    volumes:
+      - pgdog-tls:/run/tls:ro
+      - ./config/pgdog:/etc/pgdog:ro
+    networks: [app1, app2, backend]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  envoy-app1:
+    <<: *envoy
+    volumes:
+      - app1-tls:/run/tls:ro
+      - ./config/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    networks: [app1]
+
+  envoy-app2:
+    <<: *envoy
+    volumes:
+      - app2-tls:/run/tls:ro
+      - ./config/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    networks: [app2]
+
+  app1:
+    <<: *app
+    network_mode: service:envoy-app1
+    environment:
+      APP_ID: app1
+      OTHER_APP_ID: app2
+      OTHER_APP_PORT: ${APP2_PORT:-8082}
+      UI_PORT: '8080'
+      DIRECT_DB_IP: ${DIRECT_DB_IP:-172.30.83.10}
+    depends_on:
+      envoy-app1: {condition: service_started}
+
+  app2:
+    <<: *app
+    network_mode: service:envoy-app2
+    environment:
+      APP_ID: app2
+      OTHER_APP_ID: app1
+      OTHER_APP_PORT: ${APP1_PORT:-8081}
+      UI_PORT: '8080'
+      DIRECT_DB_IP: ${DIRECT_DB_IP:-172.30.83.10}
+    depends_on:
+      envoy-app2: {condition: service_started}
+
+  security-tests:
+    <<: *hardened
+    profiles: [test]
+    build: {context: ., dockerfile: tests/Dockerfile}
+    user: '10001:10001'
+    volumes: [test-tls:/tls:ro]
+    networks: [app1, app2, backend]
+    depends_on:
+      pgbouncer: {condition: service_started}
+      pgdog: {condition: service_started}
+
+networks:
+  web: {}
+  app1: {internal: true}
+  app2: {internal: true}
+  backend:
+    internal: true
+    ipam:
+      config: [{subnet: '${BACKEND_SUBNET:-172.30.83.0/24}'}]
+
+volumes:
+  ca-private:
+  app1-tls:
+  app2-tls:
+  pgbouncer-tls:
+  pgdog-tls:
+  postgres-tls:
+  test-tls:
+  postgres-data:
