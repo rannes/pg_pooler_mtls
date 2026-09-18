@@ -47,4 +47,4 @@ Files: `README.md`, `docs/IMPLEMENTATION.md`, `docs/SECURITY.md`, `Makefile`, `.
 - [x] Document exact setup, architecture diagram, certificate and role mappings, lifecycle commands, test matrix, and known limits; cite primary upstream docs and versioned source.
 - [x] Add CI that boots stack, runs unit/security/API integration tests, and collects service logs on failure.
 - [x] Perform independent review, address material findings, cold-start test, browser check, and secret scan.
-- [ ] Commit and create/push a private GitHub repository by default because visibility was unspecified. Verify remote commit and provide repository/UI/document links.
+- [x] Commit and create/push a private GitHub repository by default because visibility was unspecified. Verify remote commit and provide repository/UI/document links.
